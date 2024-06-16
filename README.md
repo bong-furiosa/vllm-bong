@@ -1,5 +1,14 @@
 You can track the modified code to remove Batch Expansion from Speculative Decoding in the original vLLM by searching for **(bong-furiosa)**.
+- Currently, only Eaager Mode is supported.
+- I have only tested using LLaMA-7B and TinyLLaMA. Testing and bug reports are needed for other models.
 
+You can test the No Batch Expansion Speculative Decoding using the following commands.
+```Bash
+# FlashAttention Backend
+VLLM_ATTENTION_BACKEND=FLASH_ATTN python3 test_nobe_sps.py
+# FlashInfer Backend
+VLLM_ATTENTION_BACKEND=FLASHINFER python3 test_nobe_sps.py
+```
 ---
 
 <p align="center">
