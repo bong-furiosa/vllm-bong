@@ -1,5 +1,4 @@
-수정된 코드 설명은 이곳에 추가
-
+You can track the modified code to remove Batch Expansion from Speculative Decoding in the original vLLM by searching for **(bong-furiosa)**.
 
 ---
 
