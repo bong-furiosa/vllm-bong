@@ -49,7 +49,8 @@ class WorkerBase(ABC):
     @abstractmethod
     def execute_model(
         self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
+        execute_model_req: Optional[ExecuteModelRequest] = None,
+        num_speculative_tokens: int = 0,
     ) -> List[SamplerOutput]:
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""

@@ -232,7 +232,8 @@ class Worker(WorkerBase):
     @torch.inference_mode()
     def execute_model(
         self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
+        execute_model_req: Optional[ExecuteModelRequest] = None,
+        num_speculative_tokens: int = 0,
     ) -> List[Union[SamplerOutput, PoolerOutput]]:
         if not self.is_driver_worker:
             self._execute_model_non_driver()
@@ -278,7 +279,8 @@ class Worker(WorkerBase):
             return []
 
         output = self.model_runner.execute_model(seq_group_metadata_list,
-                                                 self.gpu_cache)
+                                                 self.gpu_cache,
+                                                 num_speculative_tokens)
 
         # Worker only supports single-step execution. Wrap the output in a list
         # to conform to interface.

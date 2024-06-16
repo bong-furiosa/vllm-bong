@@ -266,6 +266,7 @@ class CPUWorker(LoraNotSupportedWorkerBase):
     def execute_model(
         self,
         execute_model_req: Optional[ExecuteModelRequest] = None,
+        num_speculative_tokens: int = 0,
     ) -> List[SamplerOutput]:
 
         if execute_model_req is None:

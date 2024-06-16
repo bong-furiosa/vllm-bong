@@ -77,6 +77,7 @@ class NeuronWorker(LoraNotSupportedWorkerBase):
     def execute_model(
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
+        num_speculative_tokens: int = 0,
     ) -> List[SamplerOutput]:
         num_seq_groups = len(seq_group_metadata_list)
 

@@ -119,6 +119,9 @@ class FlashAttentionMetadata(AttentionMetadata):
     # TODO(woosuk): Move `use_cuda_graph` out since it's unrelated to attention.
     use_cuda_graph: bool
 
+    # TODO(bong-furiosa) Add Comment
+    num_speculative_tokens: int = 0
+
     _cached_prefill_metadata: Optional["FlashAttentionMetadata"] = None
     _cached_decode_metadata: Optional["FlashAttentionMetadata"] = None
 
@@ -152,6 +155,7 @@ class FlashAttentionMetadata(AttentionMetadata):
             context_lens_tensor=self.context_lens_tensor[:self.num_prefills],
             block_tables=self.block_tables[:self.num_prefills],
             use_cuda_graph=False,
+            num_speculative_tokens=self.num_speculative_tokens,
         )
         return self._cached_prefill_metadata
 
@@ -180,6 +184,7 @@ class FlashAttentionMetadata(AttentionMetadata):
             context_lens_tensor=None,
             block_tables=self.block_tables[self.num_prefills:],
             use_cuda_graph=self.use_cuda_graph,
+            num_speculative_tokens=self.num_speculative_tokens,
         )
         return self._cached_decode_metadata
 
@@ -352,8 +357,9 @@ class FlashAttentionImpl(AttentionImpl):
 
         if decode_meta := attn_metadata.decode_metadata:
             # Decoding run.
+            decode_query = decode_query.view(-1, decode_meta.num_speculative_tokens + 1, self.num_heads, self.head_size)
             output[num_prefill_tokens:] = flash_attn_with_kvcache(
-                decode_query.unsqueeze(1),
+                decode_query,
                 key_cache,
                 value_cache,
                 block_table=decode_meta.block_tables,
@@ -361,7 +367,7 @@ class FlashAttentionImpl(AttentionImpl):
                 softmax_scale=self.scale,
                 causal=True,
                 alibi_slopes=self.alibi_slopes,
-            ).squeeze(1)
+            ).view(-1, self.num_heads, self.head_size)
 
         # Reshape the output tensor.
         return output.view(num_tokens, hidden_size)

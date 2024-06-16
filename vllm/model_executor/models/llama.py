@@ -382,8 +382,10 @@ class LlamaForCausalLM(nn.Module):
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
+        num_speculative_tokens: int = 0,
     ) -> Optional[SamplerOutput]:
-        next_tokens = self.sampler(logits, sampling_metadata)
+        # TODO(bong-furiosa) Add Comment
+        next_tokens = self.sampler(logits, sampling_metadata, num_speculative_tokens)
         return next_tokens
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):

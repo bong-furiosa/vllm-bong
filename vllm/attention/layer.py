@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 
 from vllm.attention.backends.abstract import AttentionMetadata
+from vllm.attention.backends.flashinfer import FlashInferImpl
 from vllm.attention.selector import get_attn_backend
 from vllm.config import CacheConfig
 from vllm.model_executor.layers.quantization.base_config import (
@@ -74,9 +75,18 @@ class Attention(nn.Module):
                                         block_size, blocksparse_params
                                         is not None)
         impl_cls = attn_backend.get_impl_cls()
-        self.impl = impl_cls(num_heads, head_size, scale, num_kv_heads,
-                             alibi_slopes, sliding_window, kv_cache_dtype,
-                             blocksparse_params)
+
+        # NOTE(bong-furiosa): Currently, FlashInfer does not support blocksparse_params.
+        # This conditional branch is used to prevent the instantiation of FlashInfer with blocksparse_params.
+        # If FlashInfer supports blocksparse_params in the future, this conditional branch will be removed.
+        if impl_cls == FlashInferImpl:
+            assert blocksparse_params is None, "Currently, FlashInfer does not support blocksparse_params."
+            self.impl = impl_cls(num_heads, head_size, scale, num_kv_heads,
+                                 alibi_slopes, sliding_window, kv_cache_dtype)
+        else:
+            self.impl = impl_cls(num_heads, head_size, scale, num_kv_heads,
+                                 alibi_slopes, sliding_window, kv_cache_dtype,
+                                 blocksparse_params)
 
     def forward(
         self,

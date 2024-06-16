@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
 import flashinfer
 import torch
-from flashinfer import BatchDecodeWithPagedKVCacheWrapper
+from flashinfer import BatchDecodeWithPagedKVCacheWrapper, BatchPrefillWithPagedKVCacheWrapper
 from vllm_flash_attn import flash_attn_varlen_func
 
 from vllm import _custom_ops as ops
@@ -63,6 +63,8 @@ class FlashInferMetadata(AttentionMetadata):
     use_cuda_graph: bool = False
 
     decode_wrapper: Optional[BatchDecodeWithPagedKVCacheWrapper] = None
+    # TODO(bong-furiosa): Add Comment
+    specdec_wrapper: Optional[BatchPrefillWithPagedKVCacheWrapper] = None
 
     # Metadata for the prefill stage since we still
     # use flash attention for prefill.
@@ -73,6 +75,8 @@ class FlashInferMetadata(AttentionMetadata):
     # Workspace buffer required by the kernel, the buffer should not
     # be allocated/deacollated by the FalshInfermetadata object.
     workspace_buffer: Optional[torch.Tensor] = None
+    # TODO(bong-furiosa) Add Comment "BatchPrefillWithPagedKVCacheWrapper를 사용하는 경우, qo_indptr가 필요!"
+    qo_indptr: Optional[torch.Tensor] = None
     # An example for paged_kv_indices, paged_kv_indptr:
     # request 1, page indices [0, 5, 8]
     # request 2, page indices [1, 6, 7]
@@ -98,6 +102,8 @@ class FlashInferMetadata(AttentionMetadata):
     page_size: Optional[int] = None
     # The data type of the paged kv cache
     data_type: torch.dtype = None
+    # TODO(bong-furiosa) Add Comment
+    num_speculative_tokens: int = 0
 
     def __post_init__(self):
         # Refer to
@@ -114,19 +120,33 @@ class FlashInferMetadata(AttentionMetadata):
         # post_init if it's the prefill phase.
         if self.num_prefills == 0:
             assert self.num_decode_tokens > 0
-            self.decode_wrapper = flashinfer.BatchDecodeWithPagedKVCacheWrapper(
-                self.workspace_buffer, "NHD")
-            self.decode_wrapper.begin_forward(
-                self.paged_kv_indptr,
-                self.paged_kv_indices,
-                self.paged_kv_last_page_len,
-                self.num_qo_heads,
-                self.num_kv_heads,
-                self.head_dim,
-                self.page_size,
-                # Disable flashinfer's pos encoding and use vllm's rope.
-                pos_encoding_mode="NONE",
-                data_type=self.data_type)
+            # TODO(bong-furiosa): Add Comment "draft model decoding 상황에서는 BatchDecodeWithPagedKVCacheWrapper를 사용한다."
+            if self.num_speculative_tokens == 0:
+                self.decode_wrapper = flashinfer.BatchDecodeWithPagedKVCacheWrapper(
+                    self.workspace_buffer, "NHD")
+                self.decode_wrapper.begin_forward(
+                    self.paged_kv_indptr,
+                    self.paged_kv_indices,
+                    self.paged_kv_last_page_len,
+                    self.num_qo_heads,
+                    self.num_kv_heads,
+                    self.head_dim,
+                    self.page_size,
+                    # Disable flashinfer's pos encoding and use vllm's rope.
+                    pos_encoding_mode="NONE",
+                    data_type=self.data_type)
+            # TODO(bong-furiosa): Add Comment "num_speculative_tokens가 주어지는 target model decoding 상황에서는 BatchPrefillWithPagedKVCacheWrapper를 사용한다."
+            else:
+                self.specdec_wrapper = flashinfer.BatchPrefillWithPagedKVCacheWrapper(
+                    self.workspace_buffer, "NHD")
+                self.specdec_wrapper.begin_forward(
+                    self.qo_indptr,
+                    self.paged_kv_indptr,
+                    self.paged_kv_indices,
+                    self.paged_kv_last_page_len,
+                    self.num_qo_heads,
+                    self.num_kv_heads,
+                    self.head_dim)
 
     def asdict_zerocopy(self,
                         skip_fields: Optional[Set[str]] = None
@@ -239,12 +259,21 @@ class FlashInferImpl(AttentionImpl):
                     "Prefix caching is not supported with flashinfer yet.")
         else:
             assert attn_metadata.decode_metadata is not None
-            assert attn_metadata.decode_metadata.decode_wrapper is not None
+            assert attn_metadata.decode_metadata.decode_wrapper is not None or attn_metadata.decode_metadata.specdec_wrapper is not None 
             query = query.contiguous(
             )  # Flashinfer requires query to be contiguous
-            output = attn_metadata.decode_metadata.decode_wrapper.forward(
-                query,
-                kv_cache,
-                sm_scale=self.scale,
-            )
+            if attn_metadata.decode_metadata.decode_wrapper is not None:
+                output = attn_metadata.decode_metadata.decode_wrapper.forward(
+                    query,
+                    kv_cache,
+                    sm_scale=self.scale,
+                )
+            else:
+                output = attn_metadata.decode_metadata.specdec_wrapper.forward(
+                    query,
+                    kv_cache,
+                    sm_scale=self.scale,
+                    causal=True,
+                    pos_encoding_mode="NONE",
+                )
         return output.view(num_tokens, hidden_size)
