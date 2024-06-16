@@ -266,6 +266,8 @@ class CPUWorker(LoraNotSupportedWorkerBase):
     def execute_model(
         self,
         execute_model_req: Optional[ExecuteModelRequest] = None,
+        # NOTE(bong-furiosa)
+        # num_speculative_tokens is newly added, but not used current CPUWorker.
         num_speculative_tokens: int = 0,
     ) -> List[SamplerOutput]:
 

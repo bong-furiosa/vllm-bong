@@ -233,6 +233,8 @@ class Worker(WorkerBase):
     def execute_model(
         self,
         execute_model_req: Optional[ExecuteModelRequest] = None,
+        # NOTE(bong-furiosa)
+        # num_speculative_tokens is newly added.
         num_speculative_tokens: int = 0,
     ) -> List[Union[SamplerOutput, PoolerOutput]]:
         if not self.is_driver_worker:
@@ -278,6 +280,8 @@ class Worker(WorkerBase):
         if num_seq_groups == 0:
             return []
 
+        # NOTE(bong-furiosa)
+        # num_speculative_tokens is newly added.
         output = self.model_runner.execute_model(seq_group_metadata_list,
                                                  self.gpu_cache,
                                                  num_speculative_tokens)

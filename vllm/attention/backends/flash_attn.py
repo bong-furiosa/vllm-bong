@@ -119,7 +119,8 @@ class FlashAttentionMetadata(AttentionMetadata):
     # TODO(woosuk): Move `use_cuda_graph` out since it's unrelated to attention.
     use_cuda_graph: bool
 
-    # TODO(bong-furiosa) Add Comment
+    # NOTE(bong-furiosa)
+    # Added for No Batch Expansion SPS.
     num_speculative_tokens: int = 0
 
     _cached_prefill_metadata: Optional["FlashAttentionMetadata"] = None
@@ -357,7 +358,9 @@ class FlashAttentionImpl(AttentionImpl):
 
         if decode_meta := attn_metadata.decode_metadata:
             # Decoding run.
-            decode_query = decode_query.view(-1, decode_meta.num_speculative_tokens + 1, self.num_heads, self.head_size)
+            decode_query = decode_query.view(
+                -1, decode_meta.num_speculative_tokens + 1, self.num_heads,
+                self.head_size)
             output[num_prefill_tokens:] = flash_attn_with_kvcache(
                 decode_query,
                 key_cache,

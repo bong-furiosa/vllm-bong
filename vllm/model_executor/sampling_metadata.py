@@ -107,6 +107,7 @@ class SamplingMetadata:
         query_lens: Optional[List[int]],
         device: str,
         pin_memory: bool,
+        num_speculative_tokens: int = 0,
     ) -> "SamplingMetadata":
         (
             seq_groups,
@@ -114,7 +115,7 @@ class SamplingMetadata:
             categorized_sample_indices,
             num_prompts,
         ) = _prepare_seq_groups(seq_group_metadata_list, seq_lens, query_lens,
-                                device)
+                                device, num_speculative_tokens)
         selected_token_indices = async_tensor_h2d(selected_token_indices,
                                                   dtype=torch.long,
                                                   target_device=device,
@@ -149,6 +150,7 @@ def _prepare_seq_groups(
     seq_lens: List[int],
     query_lens: Optional[List[int]],
     device: str,
+    num_speculative_tokens: int,
 ) -> Tuple[List[SequenceGroupToSample], List[int], Dict[
         SamplingType, List[Tuple[int, int]]], int]:
     """Prepare sequence groups and indices for sampling.
@@ -222,7 +224,12 @@ def _prepare_seq_groups(
         else:
             # Decode
             prompt_logprob_len = 0
-            sample_len = len(seq_ids) if do_sample else 0
+            # NOTE(bong-furiosa)
+            # Modified for No Batch Expansion SPS.
+            # sample_len = len(seq_ids) if do_sample else 0
+            sample_len = num_speculative_tokens + 1 \
+                            if num_speculative_tokens > 0 else len(seq_ids) \
+                            if do_sample else 0
 
         # Update indices to select from the model output.
         """
@@ -312,7 +319,8 @@ class SamplingTensors:
         dtype: torch.dtype,
         *,
         extra_seeds_to_generate: int = 0,
-        extra_entropy: Optional[Tuple[int, ...]] = None
+        extra_entropy: Optional[Tuple[int, ...]] = None,
+        num_speculative_tokens: int = 0
     ) -> Tuple["SamplingTensors", bool, bool, bool]:
         """
         extra_seeds_to_generate: extra seeds to generate using the
@@ -391,20 +399,36 @@ class SamplingTensors:
                     output_tokens.extend([] for _ in range(prefill_len))
 
             if seq_group.do_sample:
-                sample_lens = len(seq_group.sample_indices)
-                assert sample_lens == len(seq_ids)
+                # NOTE(bong-furiosa)
+                # Modified for No Batch Expansion SPS.
+                sample_lens = len(
+                    seq_group.sample_indices
+                ) if num_speculative_tokens == 0 else num_speculative_tokens + 1
+                if num_speculative_tokens == 0:
+                    assert sample_lens == len(seq_ids)
+                # sample_lens = len(seq_group.sample_indices)
+                # assert sample_lens == len(seq_ids)
                 for seq_id in seq_ids:
                     seq_data = seq_group.seq_data[seq_id]
                     if do_penalties:
                         prompt_tokens.append(seq_data.prompt_token_ids)
                         output_tokens.append(seq_data.output_token_ids)
-                temperatures += [temperature] * len(seq_ids)
-                top_ps += [top_p] * len(seq_ids)
-                top_ks += [top_k] * len(seq_ids)
-                min_ps += [min_p] * len(seq_ids)
-                presence_penalties += [p] * len(seq_ids)
-                frequency_penalties += [f] * len(seq_ids)
-                repetition_penalties += [r] * len(seq_ids)
+                # NOTE(bong-furiosa)
+                # Modified for No Batch Expansion SPS.
+                temperatures += [temperature] * (len(
+                    seq_ids) if num_speculative_tokens == 0 else sample_lens)
+                top_ps += [top_p] * (len(seq_ids) if num_speculative_tokens
+                                     == 0 else sample_lens)
+                top_ks += [top_k] * (len(seq_ids) if num_speculative_tokens
+                                     == 0 else sample_lens)
+                min_ps += [min_p] * (len(seq_ids) if num_speculative_tokens
+                                     == 0 else sample_lens)
+                presence_penalties += [p] * (len(
+                    seq_ids) if num_speculative_tokens == 0 else sample_lens)
+                frequency_penalties += [f] * (len(
+                    seq_ids) if num_speculative_tokens == 0 else sample_lens)
+                repetition_penalties += [r] * (len(
+                    seq_ids) if num_speculative_tokens == 0 else sample_lens)
 
             if is_prompt:
                 prompt_best_of.append(sampling_params.best_of)

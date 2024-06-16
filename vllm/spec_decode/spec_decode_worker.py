@@ -395,6 +395,10 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             execute_model_req.seq_group_metadata_list, proposal_scores,
             proposals, execute_model_req.num_lookahead_slots)
 
+        # num_neg_ones = torch.sum(accepted_token_ids == -1).item()
+        # total_elements = accepted_token_ids.numel()
+        # print(f"😀 {num_neg_ones / total_elements}")
+
         return self._create_output_sampler_list(
             execute_model_req.seq_group_metadata_list,
             accepted_token_ids,

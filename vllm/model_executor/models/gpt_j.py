@@ -256,8 +256,10 @@ class GPTJForCausalLM(nn.Module):
         sampling_metadata: SamplingMetadata,
         num_speculative_tokens: int = 0,
     ) -> Optional[SamplerOutput]:
-        # TODO(bong-furiosa) Add Comment
-        next_tokens = self.sampler(logits, sampling_metadata, num_speculative_tokens)
+        # NOTE(bong-furiosa)
+        # Modified for No Batch Expansion SPS.
+        next_tokens = self.sampler(logits, sampling_metadata,
+                                   num_speculative_tokens)
         return next_tokens
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):

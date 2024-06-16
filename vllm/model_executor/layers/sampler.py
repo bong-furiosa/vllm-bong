@@ -51,6 +51,7 @@ class Sampler(nn.Module):
         self,
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
+        num_speculative_tokens: int = 0,
     ) -> Optional[SamplerOutput]:
         """
         Args:
@@ -65,7 +66,11 @@ class Sampler(nn.Module):
         # Prepare sampling tensors with pinned memory to avoid blocking.
         (sampling_tensors, do_penalties, do_top_p_top_k,
          do_min_p) = SamplingTensors.from_sampling_metadata(
-             sampling_metadata, vocab_size, logits.device, logits.dtype)
+             sampling_metadata,
+             vocab_size,
+             logits.device,
+             logits.dtype,
+             num_speculative_tokens=num_speculative_tokens)
 
         # Apply presence and frequency penalties.
         if do_penalties:
