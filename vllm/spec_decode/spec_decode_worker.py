@@ -22,6 +22,7 @@ from vllm.spec_decode.interfaces import (SpeculativeProposals,
 from vllm.spec_decode.medusa_worker import MedusaWorker
 from vllm.spec_decode.metrics import AsyncMetricsCollector
 from vllm.spec_decode.mlp_speculator_worker import MLPSpeculatorWorker
+from vllm.spec_decode.mqa_scorer import MQAScorer  # (bong-furiosa): 추가
 from vllm.spec_decode.multi_step_worker import MultiStepWorker
 from vllm.spec_decode.ngram_worker import NGramWorker
 from vllm.spec_decode.proposer_worker_base import ProposerWorkerBase
@@ -253,6 +254,14 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self._metrics.init_gpu_tensors(self.rank)
         self.spec_decode_sampler.init_gpu_tensors(self.rank)
 
+        # (bong-furiosa)
+        # MQAScorer 또는 BatchExpansionTop1Scorer를 선택하는 조잡한 코드
+        # TODO: 'enable_mqa' argument를 전달받도록 수정
+        # 현재 코드 수정 단계에선 MQAScorer를 dummy_scorer로써 생성
+        # 이후 MQAScorer 테스트를 진행할 예정
+        self.dummy_scorer = MQAScorer(scorer_worker=self.scorer_worker,
+                                      device=self.device,
+                                      vocab_size=self._vocab_size)
         self.scorer = BatchExpansionTop1Scorer(
             scorer_worker=self.scorer_worker,
             device=self.device,
@@ -530,6 +539,12 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             #TODO: Fix it #5814
             raise RuntimeError("Cannot handle cases where distributed draft "
                                "workers generate no tokens")
+
+        # (bong-furiosa): MQAScorer, 즉 dummy_scorer 테스트
+        _ = self.dummy_scorer.score_proposals(
+            execute_model_req,
+            proposals,
+        )
 
         proposal_scores = self.scorer.score_proposals(
             execute_model_req,
