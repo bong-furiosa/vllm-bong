@@ -1,12 +1,9 @@
 from itertools import count
 from typing import Iterator, List
 
-import torch
-
-from vllm.sequence import (ExecuteModelRequest, SamplerOutput, SequenceData, 
-                           SequenceGroupMetadata, SequenceGroupState, 
-                           get_all_seq_ids)
-from vllm.spec_decode.interfaces import (SpeculativeProposals, 
+from vllm.sequence import (ExecuteModelRequest, SequenceData,
+                           SequenceGroupMetadata, get_all_seq_ids)
+from vllm.spec_decode.interfaces import (SpeculativeProposals,
                                          SpeculativeScorer, SpeculativeScores)
 from vllm.spec_decode.util import nvtx_range
 from vllm.worker.worker_base import WorkerBase
@@ -26,11 +23,15 @@ class MQAScorer(SpeculativeScorer):
 
     @nvtx_range("MQAScorer.score_proposals")
     def score_proposals(
-        self, 
-        execute_model_req: ExecuteModelRequest, 
-        proposals: SpeculativeProposals
+        self,
+        execute_model_req: ExecuteModelRequest,
+        proposals: SpeculativeProposals,
+        # (bong-furiosa)
+        # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+        # 제어하기 위해 enable_mqa를 추가.
+        enable_mqa: bool = False,
     ) -> SpeculativeScores:
-        target_seq_group_metadata_list : List[SequenceGroupMetadata] = []
+        target_seq_group_metadata_list: List[SequenceGroupMetadata] = []
         target_seq_ids_iter = self._create_target_seq_id_iterator(
             seq_ids=get_all_seq_ids(execute_model_req.seq_group_metadata_list))
         for i, seq_group_metadata in enumerate(
@@ -45,14 +46,12 @@ class MQAScorer(SpeculativeScorer):
             new_output_token_ids = [*output_token_ids, *proposal_token_ids]
 
             target_seq_id = next(target_seq_ids_iter)
-            new_seq_data = SequenceData(
-                prompt_token_ids=prompt_token_ids,
-                output_token_ids=new_output_token_ids
-            )
+            new_seq_data = SequenceData(prompt_token_ids=prompt_token_ids,
+                                        output_token_ids=new_output_token_ids)
             assert len(output_token_ids) - 1 >= 0
             new_seq_data.update_num_computed_tokens(
                 len(prompt_token_ids) + len(output_token_ids) - 1)
-            new_seq_data_dict = {target_seq_id : new_seq_data}
+            new_seq_data_dict = {target_seq_id: new_seq_data}
 
             new_seq_group_metadata = SequenceGroupMetadata(
                 request_id=seq_group_metadata.request_id,
@@ -60,29 +59,31 @@ class MQAScorer(SpeculativeScorer):
                 seq_data=new_seq_data_dict,
                 sampling_params=seq_group_metadata.sampling_params,
                 block_tables={
-                    target_seq_id : seq_group_metadata.block_tables[seq_id]
+                    target_seq_id: seq_group_metadata.block_tables[seq_id]
                 },
                 lora_request=None,
                 token_chunk_size=1,
-                state=None, # (bong-furiosa) BatchExpansionTop1Scorer에는 있던 요소
-                            # 어떤 역할을 하는 것인지 아직 확인하지 못함
+                # (bong-furiosa)
+                # BatchExpansionTop1Scorer 입력으로 사용된 state가
+                # 어떤 역할을 하는 것인지 아직 확인하지 못함
+                state=None,
             )
             target_seq_group_metadata_list.append(new_seq_group_metadata)
-
-        print("[WARNING!] MQAScorer의 self._scorer_worker.execute_model(...)는 Attention backend 완성 후 테스트 예정")
-        return SpeculativeScores([], [], [])
-
         target_sampler_output = self._scorer_worker.execute_model(
             execute_model_req=execute_model_req.clone(
-                seq_group_metadata_list=target_seq_group_metadata_list))
+                seq_group_metadata_list=target_seq_group_metadata_list),
+            enable_mqa=enable_mqa)
+
         assert len(target_sampler_output) == 1, "expected single-step output"
         target_sampler_output = target_sampler_output[0]
 
         bs, k = proposals.proposal_token_ids.shape
         all_tokens = target_sampler_output.sampled_token_ids.reshape(bs, k + 1)
 
-        all_probs = target_sampler_output.sampled_token_probs.reshape(bs, k + 1, self._vocab_size)
-        all_logprobs = target_sampler_output.logprobs.reshape(bs, k + 1, self._vocab_size)
+        all_probs = target_sampler_output.sampled_token_probs.reshape(
+            bs, k + 1, self._vocab_size)
+        all_logprobs = target_sampler_output.logprobs.reshape(
+            bs, k + 1, self._vocab_size)
 
         return SpeculativeScores(probs=all_probs,
                                  token_ids=all_tokens,

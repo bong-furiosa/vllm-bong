@@ -322,6 +322,21 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
         seq_data = seq_group_metadata.seq_data[inter_data.seq_ids[seq_idx]]
         token_chunk_size = seq_group_metadata.token_chunk_size
 
+        # (bong-furiosa): Liu의 model_runner.py를 따라서 수정
+        # 수정되는 내용은 --A-- 부터 --B--까지
+        # 코드 수정 단계에선 underscore 'dummy'를 사용하여 표시한다
+        # dummy_context_len = seq_data.get_num_computed_tokens()
+        # dummy_seq_len = -1
+        # if inter_data.is_prompt:
+        #     dummy_seq_len = min(seq_data.get_len(),
+        #                         dummy_context_len + token_chunk_size)
+        # else:
+        #     dummy_seq_len = seq_data.get_len()
+
+        # dummy_tokens = seq_data.get_token_ids(
+        # )[dummy_context_len:dummy_seq_len]
+
+        # --------------------------------A--------------------------------
         # Compute context length (the number of tokens that are
         # already computed) and sequence length (total number of tokens).
         seq_len = seq_data.get_len()
@@ -341,6 +356,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
             # Optimization. get_token_ids requires the entire copy of
             # tokens.
             tokens = [seq_data.get_last_token_id()]
+        # --------------------------------B--------------------------------
 
         inter_data.seq_lens[seq_idx] = seq_len
         inter_data.orig_seq_lens[seq_idx] = seq_len
@@ -468,8 +484,14 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
         mm_kwargs = self.multi_modal_input_mapper(mm_data)
         inter_data.multi_modal_inputs = mm_kwargs
 
-    def add_seq_group(self, seq_group_metadata: SequenceGroupMetadata):
+    def add_seq_group(self, seq_group_metadata: SequenceGroupMetadata,
+                      enable_mqa: bool):
         """Add a sequence group to the builder."""
+        if enable_mqa is None:
+            raise Exception("The provided variable is None")
+        else:
+            self.enable_mqa = enable_mqa
+
         seq_ids = list(seq_group_metadata.seq_data.keys())
         n_seqs = len(seq_ids)
         is_prompt = seq_group_metadata.is_prompt
@@ -836,7 +858,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         """
         builder = self._builder_cls(weakref.proxy(self), finished_requests_ids)
         for seq_group_metadata in seq_group_metadata_list:
-            builder.add_seq_group(seq_group_metadata)
+            builder.add_seq_group(seq_group_metadata, self.get_enable_mqa())
         return builder.build()  # type: ignore
 
     @torch.inference_mode()
@@ -1275,6 +1297,19 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                                    sampling_metadata=sampling_metadata,
                                    is_prompt=is_prompt,
                                    virtual_engine=virtual_engine)
+
+    # (bong-furiosa)
+    # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+    # 제어하는 enable_mqa 접근 함수
+    def set_enable_mqa(self, enable_mqa: bool):
+        self.enable_mqa = enable_mqa
+
+    def get_enable_mqa(self) -> bool:
+        try:
+            return self.enable_mqa
+        except AttributeError as e:
+            print(f"An error occurred: {e}")
+            exit(-1)
 
     @torch.inference_mode()
     def execute_model(

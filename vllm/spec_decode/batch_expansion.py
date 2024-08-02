@@ -43,6 +43,10 @@ class BatchExpansionTop1Scorer(SpeculativeScorer):
         self,
         execute_model_req: ExecuteModelRequest,
         proposals: SpeculativeProposals,
+        # (bong-furiosa)
+        # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+        # 제어하기 위해 enable_mqa를 추가.
+        enable_mqa: bool = False,
     ) -> SpeculativeScores:
         """Score the proposed tokens via the scorer model.
 

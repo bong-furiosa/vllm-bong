@@ -544,6 +544,11 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         _ = self.dummy_scorer.score_proposals(
             execute_model_req,
             proposals,
+            # (bong-furiosa)
+            # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+            # 제어하기 위해 enable_mqa를 추가.
+            # MQAScorer는 enable_mqa를 True으로 설정.
+            enable_mqa=True,
         )
 
         proposal_scores = self.scorer.score_proposals(
