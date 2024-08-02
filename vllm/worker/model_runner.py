@@ -322,41 +322,49 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
         seq_data = seq_group_metadata.seq_data[inter_data.seq_ids[seq_idx]]
         token_chunk_size = seq_group_metadata.token_chunk_size
 
-        # (bong-furiosa): Liu의 model_runner.py를 따라서 수정
-        # 수정되는 내용은 --A-- 부터 --B--까지
-        # 코드 수정 단계에선 underscore 'dummy'를 사용하여 표시한다
-        # dummy_context_len = seq_data.get_num_computed_tokens()
-        # dummy_seq_len = -1
-        # if inter_data.is_prompt:
-        #     dummy_seq_len = min(seq_data.get_len(),
-        #                         dummy_context_len + token_chunk_size)
-        # else:
-        #     dummy_seq_len = seq_data.get_len()
-
-        # dummy_tokens = seq_data.get_token_ids(
-        # )[dummy_context_len:dummy_seq_len]
-
-        # --------------------------------A--------------------------------
         # Compute context length (the number of tokens that are
         # already computed) and sequence length (total number of tokens).
-        seq_len = seq_data.get_len()
-        if inter_data.is_prompt:
+        if self.enable_mqa: # MQAScorer
+            # (bong-furiosa)
+            # LiuXiaoxuanPK의 PR 내용을 참고하여 
+            # MQAScorer이 사용할 context_len, seq_len, tokens를
+            # 설정한다.
             context_len = seq_data.get_num_computed_tokens()
-        else:
-            # get_num_computed_tokens is incorrect for spec decoding.
-            # So, we should have a special logic here.
-            # TODO(sang): Fix it.
-            context_len = seq_len - 1
-        seq_len = min(seq_len, context_len + token_chunk_size)
-
-        # Compute tokens.
-        if inter_data.is_prompt:
+            seq_len = -1
+            if inter_data.is_prompt:
+                seq_len = min(seq_data.get_len(),
+                              context_len + token_chunk_size)
+            else:
+                seq_len = seq_data.get_len()
             tokens = seq_data.get_token_ids()[context_len:seq_len]
-        else:
-            # Optimization. get_token_ids requires the entire copy of
-            # tokens.
-            tokens = [seq_data.get_last_token_id()]
-        # --------------------------------B--------------------------------
+
+        else: # others
+            seq_len = seq_data.get_len()
+            if inter_data.is_prompt:
+                context_len = seq_data.get_num_computed_tokens()
+            else:
+                # get_num_computed_tokens is incorrect for spec decoding.
+                # So, we should have a special logic here.
+                # TODO(sang): Fix it.
+                context_len = seq_len - 1
+            seq_len = min(seq_len, context_len + token_chunk_size)
+
+            # Compute tokens.
+            if inter_data.is_prompt:
+                tokens = seq_data.get_token_ids()[context_len:seq_len]
+            else:
+                # Optimization. get_token_ids requires the entire copy of
+                # tokens.
+                tokens = [seq_data.get_last_token_id()]
+
+        if self.enable_mqa: # MQAScorer
+            print(f" {inter_data.is_prompt}: 😀 -> {len(tokens)}")
+            print(f" {inter_data.is_prompt}: 😀 -> {context_len}")
+            print(f" {inter_data.is_prompt}: 😀 -> {seq_len}")
+        else: # others
+            print(f" {inter_data.is_prompt}  😡 -> {len(tokens)}")
+            print(f" {inter_data.is_prompt}: 😡 -> {context_len}")
+            print(f" {inter_data.is_prompt}: 😡 -> {seq_len}")
 
         inter_data.seq_lens[seq_idx] = seq_len
         inter_data.orig_seq_lens[seq_idx] = seq_len

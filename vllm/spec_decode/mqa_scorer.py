@@ -73,6 +73,8 @@ class MQAScorer(SpeculativeScorer):
             execute_model_req=execute_model_req.clone(
                 seq_group_metadata_list=target_seq_group_metadata_list),
             enable_mqa=enable_mqa)
+        print("[WARNING] MQAScorer score_proposals Debugging.")
+        return SpeculativeScores([], [], [])
 
         assert len(target_sampler_output) == 1, "expected single-step output"
         target_sampler_output = target_sampler_output[0]

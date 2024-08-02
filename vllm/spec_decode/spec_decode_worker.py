@@ -532,6 +532,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self.previous_hidden_states = None
 
         # Generate proposals using draft worker.
+        print("---1️⃣--- Run Proposal")
         proposals = self.proposer_worker.get_spec_proposals(
             execute_model_req, self._seq_with_bonus_token_in_last_step)
 
@@ -541,6 +542,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
                                "workers generate no tokens")
 
         # (bong-furiosa): MQAScorer, 즉 dummy_scorer 테스트
+        print("---2️⃣--- Run MQAScorer")
         _ = self.dummy_scorer.score_proposals(
             execute_model_req,
             proposals,
@@ -551,6 +553,7 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             enable_mqa=True,
         )
 
+        print("---3️⃣--- Run BatchExpansionTop1Scorer")
         proposal_scores = self.scorer.score_proposals(
             execute_model_req,
             proposals,
