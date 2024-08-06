@@ -702,6 +702,10 @@ class SequenceGroupMetadata:
         # TODO: We should maintain this states out of the sequence group.
         self.num_speculative_tokens = None
 
+        # (bong-furiosa)
+        # SamplingMetadata에서 MQAScorer 제어를 위해 추가
+        self.is_mqa_scorer = False
+
         if self._token_chunk_size is None:
             if is_prompt:
                 self._token_chunk_size = list(seq_data.values())[0].get_len()

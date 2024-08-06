@@ -68,14 +68,19 @@ class MQAScorer(SpeculativeScorer):
                 # 어떤 역할을 하는 것인지 아직 확인하지 못함
                 state=None,
             )
+            # (bong-furiosa)
+            # SamplingMetadata까지 num_lookahead_slots과
+            # new_seq_group_metadata.is_mqa_scorer를 전달 목적
+            new_seq_group_metadata.num_speculative_tokens =\
+                execute_model_req.num_lookahead_slots
+            new_seq_group_metadata.is_mqa_scorer = True
+
             target_seq_group_metadata_list.append(new_seq_group_metadata)
+
         target_sampler_output = self._scorer_worker.execute_model(
             execute_model_req=execute_model_req.clone(
                 seq_group_metadata_list=target_seq_group_metadata_list),
             enable_mqa=enable_mqa)
-        print("[WARNING] MQAScorer score_proposals Debugging.")
-        return SpeculativeScores([], [], [])
-
         assert len(target_sampler_output) == 1, "expected single-step output"
         target_sampler_output = target_sampler_output[0]
 

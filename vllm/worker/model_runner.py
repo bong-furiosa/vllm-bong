@@ -324,11 +324,9 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
 
         # Compute context length (the number of tokens that are
         # already computed) and sequence length (total number of tokens).
-        if self.enable_mqa: # MQAScorer
+        if self.enable_mqa:  # MQAScorer
             # (bong-furiosa)
-            # LiuXiaoxuanPK의 PR 내용을 참고하여 
-            # MQAScorer이 사용할 context_len, seq_len, tokens를
-            # 설정한다.
+            # MQAScorer이 사용할 context_len, seq_len, tokens를 설정
             context_len = seq_data.get_num_computed_tokens()
             seq_len = -1
             if inter_data.is_prompt:
@@ -338,7 +336,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
                 seq_len = seq_data.get_len()
             tokens = seq_data.get_token_ids()[context_len:seq_len]
 
-        else: # others
+        else:  # others
             seq_len = seq_data.get_len()
             if inter_data.is_prompt:
                 context_len = seq_data.get_num_computed_tokens()
@@ -357,22 +355,15 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
                 # tokens.
                 tokens = [seq_data.get_last_token_id()]
 
-        if self.enable_mqa: # MQAScorer
-            print(f" {inter_data.is_prompt}: 😀 -> {len(tokens)}")
-            print(f" {inter_data.is_prompt}: 😀 -> {context_len}")
-            print(f" {inter_data.is_prompt}: 😀 -> {seq_len}")
-        else: # others
-            print(f" {inter_data.is_prompt}  😡 -> {len(tokens)}")
-            print(f" {inter_data.is_prompt}: 😡 -> {context_len}")
-            print(f" {inter_data.is_prompt}: 😡 -> {seq_len}")
-
         inter_data.seq_lens[seq_idx] = seq_len
         inter_data.orig_seq_lens[seq_idx] = seq_len
         inter_data.context_lens[seq_idx] = context_len
         inter_data.input_tokens[seq_idx] = tokens
         inter_data.input_positions[seq_idx] = list(range(context_len, seq_len))
         inter_data.query_lens[
-            seq_idx] = seq_len - context_len if inter_data.is_prompt else 1
+            seq_idx] = seq_len - context_len if self.enable_mqa \
+                or inter_data.is_prompt else 1
+        # seq_len - context_len if inter_data.is_prompt else 1
 
     def _compute_for_prefix_cache_hit(
             self, inter_data: InterDataForSeqGroup, seq_idx: int,
@@ -561,7 +552,10 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
             for data in self.inter_data_list
         }
 
-        batch_size = len(input_tokens)
+        # (bong-furiosa)
+        # MQAScorer 지원을 위해 batch_size를 len(input_tokens)에서
+        # len(query_lens)으로 변환
+        batch_size = len(query_lens)
         use_captured_graph = self._use_captured_graph(batch_size,
                                                       max_decode_seq_len)
 

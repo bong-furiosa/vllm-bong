@@ -15,7 +15,9 @@ from vllm.model_executor.layers.typical_acceptance_sampler import (
 from vllm.sequence import (CompletionSequenceGroupOutput, ExecuteModelRequest,
                            HiddenStates, SamplerOutput, SequenceGroupMetadata,
                            get_all_seq_ids, get_all_seq_ids_and_request_ids)
-from vllm.spec_decode.batch_expansion import BatchExpansionTop1Scorer
+# (bong-furiosa)
+# BatchExpansionTop1Scorer는 주석 처리
+# from vllm.spec_decode.batch_expansion import BatchExpansionTop1Scorer
 from vllm.spec_decode.draft_model_runner import TP1DraftModelRunner
 from vllm.spec_decode.interfaces import (SpeculativeProposals,
                                          SpeculativeScorer, SpeculativeScores)
@@ -255,17 +257,15 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self.spec_decode_sampler.init_gpu_tensors(self.rank)
 
         # (bong-furiosa)
-        # MQAScorer 또는 BatchExpansionTop1Scorer를 선택하는 조잡한 코드
-        # TODO: 'enable_mqa' argument를 전달받도록 수정
-        # 현재 코드 수정 단계에선 MQAScorer를 dummy_scorer로써 생성
-        # 이후 MQAScorer 테스트를 진행할 예정
-        self.dummy_scorer = MQAScorer(scorer_worker=self.scorer_worker,
-                                      device=self.device,
-                                      vocab_size=self._vocab_size)
-        self.scorer = BatchExpansionTop1Scorer(
-            scorer_worker=self.scorer_worker,
-            device=self.device,
-            vocab_size=self._vocab_size)
+        # BatchExpansionTop1Scorer는 주석 처리하여
+        # mqa_scorer와 동시에 생성되지 않도록 제한
+        self.mqa_scorer = MQAScorer(scorer_worker=self.scorer_worker,
+                                    device=self.device,
+                                    vocab_size=self._vocab_size)
+        # self.scorer = BatchExpansionTop1Scorer(
+        #     scorer_worker=self.scorer_worker,
+        #     device=self.device,
+        #     vocab_size=self._vocab_size)
 
         self._configure_model_sampler_for_spec_decode()
 
@@ -532,7 +532,6 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
         self.previous_hidden_states = None
 
         # Generate proposals using draft worker.
-        print("---1️⃣--- Run Proposal")
         proposals = self.proposer_worker.get_spec_proposals(
             execute_model_req, self._seq_with_bonus_token_in_last_step)
 
@@ -541,9 +540,9 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             raise RuntimeError("Cannot handle cases where distributed draft "
                                "workers generate no tokens")
 
-        # (bong-furiosa): MQAScorer, 즉 dummy_scorer 테스트
-        print("---2️⃣--- Run MQAScorer")
-        _ = self.dummy_scorer.score_proposals(
+        # (bong-furiosa)
+        # MQAScorer의 score_proposals 연산
+        proposal_scores = self.mqa_scorer.score_proposals(
             execute_model_req,
             proposals,
             # (bong-furiosa)
@@ -553,11 +552,13 @@ class SpecDecodeWorker(LoraNotSupportedWorkerBase):
             enable_mqa=True,
         )
 
-        print("---3️⃣--- Run BatchExpansionTop1Scorer")
-        proposal_scores = self.scorer.score_proposals(
-            execute_model_req,
-            proposals,
-        )
+        # (bong-furisoa)
+        # BatchExpansionTop1Scorer의 score_proposals 계산은 주석 처리
+        # proposal_scores = self.scorer.score_proposals(
+        #     execute_model_req,
+        #     proposals,
+        # )
+
         accepted_token_ids, target_logprobs = self._verify_tokens(
             execute_model_req.seq_group_metadata_list, proposal_scores,
             proposals, execute_model_req.num_lookahead_slots)
