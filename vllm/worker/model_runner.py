@@ -736,6 +736,11 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         self.flashinfer_decode_wrapper = None
         self.flashinfer_prefill_workspace_buffer = None
         self.flashinfer_prefill_wrapper = None
+        # (bong-furiosa)
+        # FlashInfer backend MQAScorer가 Speculative Decoding
+        # 연산을 수행하기 위해 추가된 변수
+        self.flashinfer_specdec_workspace_buffer = None
+        self.flashinfer_specdec_wrapper = None
 
         set_cpu_offload_max_bytes(
             int(self.cache_config.cpu_offload_gb * 1024**3))
@@ -1355,6 +1360,16 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                 self.flashinfer_prefill_wrapper = \
                     BatchPrefillWithPagedKVCacheWrapper(
                     self.flashinfer_prefill_workspace_buffer, "NHD")
+                # (bong-furiosa)
+                # FlashInfer backend MQAScorer가 Speculative Decoding
+                # 연산을 수행하기 위해 추가된 변수
+                self.flashinfer_specdec_workspace_buffer = torch.empty(
+                    FLASHINFER_WORKSPACE_BUFFER_SIZE,
+                    dtype=torch.uint8,
+                    device=self.device)
+                self.flashinfer_specdec_wrapper = \
+                    BatchPrefillWithPagedKVCacheWrapper(
+                        self.flashinfer_specdec_workspace_buffer, "NHD")
 
             model_input.attn_metadata.prefill_wrapper = \
                 self.flashinfer_prefill_wrapper
@@ -1364,8 +1379,17 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                     model_input.
                     virtual_engine][batch_size].flashinfer_decode_wrapper
             else:
-                model_input.attn_metadata.decode_wrapper = \
-                    self.flashinfer_decode_wrapper
+                # (bong-furiosa)
+                # MQAScorer가 speculative decoding 연산을 수행할 때,
+                # self.flashinfer_specdec_wrapper를 사용하도록 제어
+                if self.enable_mqa is False:
+                    model_input.attn_metadata.decode_wrapper = \
+                        self.flashinfer_decode_wrapper
+                    model_input.attn_metadata.specdec_wrapper = None
+                else:
+                    model_input.attn_metadata.decode_wrapper = None
+                    model_input.attn_metadata.specdec_wrapper = \
+                        self.flashinfer_specdec_wrapper
             model_input.attn_metadata.begin_forward()
 
         # Currently cuda graph is only supported by the decode phase.
