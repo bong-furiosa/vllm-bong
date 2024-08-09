@@ -119,7 +119,10 @@ class ModelRunnerInputBuilderBase(ABC, Generic[T]):
   """
 
     @abstractmethod
-    def add_seq_group(self, seq_group_metadata):
+    # (bong-furiosa)
+    # model_runner.py에서 MQAScorer의 inter_data 값 계산을 제어하기 위해
+    # enable_mqa를 인자로 받도록 수정됨.
+    def add_seq_group(self, seq_group_metadata, enable_mqa):
         """TBA"""
         raise NotImplementedError
 
@@ -148,6 +151,16 @@ class ModelRunnerBase(ABC, Generic[T]):
         Make an instance of a ModelRunnerInputBase from the broadcasted tensor
         dict.
         """
+        raise NotImplementedError
+
+    # (bong-furiosa)
+    # ModelRunner child class들의 enable_mqa 변수를 설정하는 함수
+    @abstractmethod
+    def set_enable_mqa(self, enable_mqa: bool):
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_enable_mqa(self) -> bool:
         raise NotImplementedError
 
     @abstractmethod

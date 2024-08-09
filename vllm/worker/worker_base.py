@@ -215,10 +215,19 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
     def execute_model(
         self,
-        execute_model_req: Optional[ExecuteModelRequest] = None
+        execute_model_req: Optional[ExecuteModelRequest] = None,
+        # (bong-furiosa)
+        # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+        # 제어하기 위해 enable_mqa를 추가.
+        enable_mqa: bool = False,
     ) -> Optional[List[SamplerOutput]]:
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
+        # (bong-furiosa)
+        # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+        # 제어하기 위해 enable_mqa를 추가.
+        self.model_runner.set_enable_mqa(enable_mqa)
+
         if self.is_driver_worker:
             if execute_model_req is None:
                 if self.do_metadata_broadcast:

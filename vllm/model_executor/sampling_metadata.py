@@ -233,7 +233,19 @@ def _prepare_seq_groups(
         else:
             # Decode
             prompt_logprob_len = 0
-            sample_len = len(seq_ids) if do_sample else 0
+            # sample_len = len(seq_ids) if do_sample else 0
+
+            # Proposer, BatchExpansionTop1Scorer
+            if do_sample and not seq_group_metadata.is_mqa_scorer:
+                # (bong-furiosa)
+                # 현재 vLLM에서 BeamSearch SpecDec는
+                # 지원되지 않는 것으로 알고 있음
+                sample_len = len(seq_ids)
+            # MQAScorer
+            elif do_sample and seq_group_metadata.is_mqa_scorer:
+                sample_len = seq_group_metadata.num_speculative_tokens + 1
+            else:
+                sample_len = 0
 
         # Update indices to select from the model output.
         """
@@ -400,14 +412,17 @@ class SamplingTensors:
 
             if seq_group.do_sample:
                 sample_lens = len(seq_group.sample_indices)
-                assert sample_lens == len(seq_ids)
-                temperatures += [temperature] * len(seq_ids)
-                top_ps += [top_p] * len(seq_ids)
-                top_ks += [top_k] * len(seq_ids)
-                min_ps += [min_p] * len(seq_ids)
-                presence_penalties += [p] * len(seq_ids)
-                frequency_penalties += [f] * len(seq_ids)
-                repetition_penalties += [r] * len(seq_ids)
+                # (bong-furiosa)
+                # MQAScorer는 sample_lens(=6) != len(seq_ids)(=1)으로 계산되므로
+                # assert를 주석 처리
+                # assert sample_lens == len(seq_ids)
+                temperatures += [temperature] * sample_lens  # * len(seq_ids)
+                top_ps += [top_p] * sample_lens  # * len(seq_ids)
+                top_ks += [top_k] * sample_lens  # * len(seq_ids)
+                min_ps += [min_p] * sample_lens  # * len(seq_ids)
+                presence_penalties += [p] * sample_lens  # * len(seq_ids)
+                frequency_penalties += [f] * sample_lens  # * len(seq_ids)
+                repetition_penalties += [r] * sample_lens  # * len(seq_ids)
 
             if is_prompt:
                 prompt_best_of.append(sampling_params.best_of)

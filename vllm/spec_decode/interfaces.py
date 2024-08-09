@@ -68,6 +68,10 @@ class SpeculativeProposer(ABC):
         # If set, this contains all sequence IDs that were assigned
         # bonus tokens in their last forward pass.
         seq_ids_with_bonus_token_in_last_step: Set[int],
+        # (bong-furiosa)
+        # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+        # 제어하기 위해 enable_mqa를 추가.
+        enable_mqa: bool = False,
     ) -> SpeculativeProposals:
         raise NotImplementedError
 
@@ -79,5 +83,10 @@ class SpeculativeScorer(ABC):
         self,
         execute_model_req: ExecuteModelRequest,
         proposals: SpeculativeProposals,
+        enable_mqa:
+        # (bong-furiosa)
+        # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+        # 제어하기 위해 enable_mqa를 추가.
+        bool = False,
     ) -> SpeculativeScores:
         raise NotImplementedError

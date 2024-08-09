@@ -241,9 +241,11 @@ class FlashAttentionMetadataBuilder(
                 self.num_prefill_tokens += token_len
                 self.prefill_seq_lens.append(seq_len)
             else:
-                assert query_len == 1, (
-                    "seq_len: {}, context_len: {}, query_len: {}".format(
-                        seq_len, context_len, query_len))
+                # (bong-furiosa)
+                # MQAScorer는 query_len >= 1이므로 assert 문을 삭제한다.
+                # assert query_len == 1, (
+                #     "seq_len: {}, context_len: {}, query_len: {}".format(
+                #         seq_len, context_len, query_len))
                 self.num_decode_tokens += query_len
                 self.curr_seq_lens.append(curr_seq_len)
 
@@ -548,16 +550,39 @@ class FlashAttentionImpl(AttentionImpl):
 
         if decode_meta := attn_metadata.decode_metadata:
             # Decoding run.
-            output[num_prefill_tokens:] = flash_attn_with_kvcache(
-                decode_query.unsqueeze(1),
-                key_cache,
-                value_cache,
-                block_table=decode_meta.block_tables,
-                cache_seqlens=decode_meta.seq_lens_tensor,
-                softmax_scale=self.scale,
-                causal=True,
-                alibi_slopes=self.alibi_slopes,
-            ).squeeze(1)
+
+            # (bong-furiosa)
+            # MQAScorer이라면 계산된 mqa_specdec_query_lens는
+            # (num_lookahead_slots + 1)이 된다.
+            assert decode_meta.seq_lens_tensor is not None
+            mqa_specdec_query_lens = decode_query.size(
+                0) // decode_meta.seq_lens_tensor.size(0)
+            if mqa_specdec_query_lens > 1:
+                decode_query = decode_query.view(-1, mqa_specdec_query_lens,
+                                                 self.num_heads,
+                                                 self.head_size)
+                output[num_prefill_tokens:] = flash_attn_with_kvcache(
+                    decode_query,
+                    key_cache,
+                    value_cache,
+                    block_table=decode_meta.block_tables,
+                    cache_seqlens=decode_meta.seq_lens_tensor,
+                    softmax_scale=self.scale,
+                    causal=True,
+                    alibi_slopes=self.alibi_slopes,
+                ).view(-1, self.num_heads, self.head_size)
+
+            else:
+                output[num_prefill_tokens:] = flash_attn_with_kvcache(
+                    decode_query.unsqueeze(1),
+                    key_cache,
+                    value_cache,
+                    block_table=decode_meta.block_tables,
+                    cache_seqlens=decode_meta.seq_lens_tensor,
+                    softmax_scale=self.scale,
+                    causal=True,
+                    alibi_slopes=self.alibi_slopes,
+                ).squeeze(1)
 
         # Reshape the output tensor.
         return output.view(num_tokens, hidden_size)

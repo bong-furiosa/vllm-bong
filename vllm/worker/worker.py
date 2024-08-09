@@ -174,6 +174,10 @@ class Worker(LocalOrDistributedWorkerBase):
         # cache blocks that can be allocated with the remaining free memory.
         torch.cuda.empty_cache()
 
+        # (bong-furiosa)
+        # profile_run 을 실행할 땐, enable_mqa=False으로 설정
+        self.model_runner.set_enable_mqa(False)
+
         # Execute a forward pass with dummy inputs to profile the memory usage
         # of the model.
         self.model_runner.profile_run()

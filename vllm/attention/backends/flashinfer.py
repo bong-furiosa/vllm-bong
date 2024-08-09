@@ -84,6 +84,10 @@ class FlashInferMetadata(AttentionMetadata):
 
     prefill_wrapper: Optional[BatchPrefillWithPagedKVCacheWrapper] = None
     decode_wrapper: Optional[BatchDecodeWithPagedKVCacheWrapper] = None
+    # (bong-furiosa)
+    # FlashInfer backend MQAScorer가 Speculative Decoding
+    # 연산을 수행하기 위해 추가된 변수
+    specdec_wrapper: Optional[BatchPrefillWithPagedKVCacheWrapper] = None
 
     # Metadata for the prefill stage
     seq_start_loc: Optional[torch.Tensor] = None
@@ -157,20 +161,33 @@ class FlashInferMetadata(AttentionMetadata):
                 self.paged_kv_indptr = self.paged_kv_indptr.to(self.device)
                 self.paged_kv_last_page_len = self.paged_kv_last_page_len.to(
                     self.device)
-
-            assert self.decode_wrapper is not None
-            self.decode_wrapper.end_forward()
-            self.decode_wrapper.begin_forward(
-                self.paged_kv_indptr,
-                self.paged_kv_indices,
-                self.paged_kv_last_page_len,
-                self.num_qo_heads,
-                self.num_kv_heads,
-                self.head_dim,
-                self.page_size,
-                # Disable flashinfer's pos encoding and use vllm's rope.
-                pos_encoding_mode="NONE",
-                data_type=self.data_type)
+            # (bong-furiosa)
+            # 일반 decoding에서 사용될 self.decode_wrapper
+            # begin_forward 연산
+            if self.decode_wrapper is not None:
+                self.decode_wrapper.end_forward()
+                self.decode_wrapper.begin_forward(
+                    self.paged_kv_indptr,
+                    self.paged_kv_indices,
+                    self.paged_kv_last_page_len,
+                    self.num_qo_heads,
+                    self.num_kv_heads,
+                    self.head_dim,
+                    self.page_size,
+                    # Disable flashinfer's pos encoding and use vllm's rope.
+                    pos_encoding_mode="NONE",
+                    data_type=self.data_type)
+            else:
+                # (bong-furiosa)
+                # speculative decoding에서 사용될 self.specdec_wrapper
+                # begin_forward 연산
+                assert self.specdec_wrapper is not None
+                self.specdec_wrapper.end_forward()
+                self.specdec_wrapper.begin_forward(
+                    self.query_start_loc, self.paged_kv_indptr,
+                    self.paged_kv_indices, self.paged_kv_last_page_len,
+                    self.num_qo_heads, self.num_kv_heads, self.head_dim,
+                    self.page_size)
 
     def asdict_zerocopy(self,
                         skip_fields: Optional[Set[str]] = None
@@ -181,6 +198,7 @@ class FlashInferMetadata(AttentionMetadata):
         # broadcasted with nccl when TP is enabled.
         skip_fields.add('prefill_wrapper')
         skip_fields.add('decode_wrapper')
+        skip_fields.add('specdec_wrapper')
         return super().asdict_zerocopy(skip_fields)
 
     @property
@@ -258,14 +276,17 @@ class FlashInferMetadataBuilder(AttentionMetadataBuilder[FlashInferMetadata]):
                  inter_data.query_lens, inter_data.context_lens,
                  inter_data.curr_sliding_window_blocks):
             self.context_lens.append(context_len)
+
             if is_prompt:
                 self.num_prefills += 1
                 self.num_prefill_tokens += token_len
                 self.prefill_seq_lens.append(seq_len)
             else:
-                assert query_len == 1, (
-                    "seq_len: {}, context_len: {}, query_len: {}".format(
-                        seq_len, context_len, query_len))
+                # (bong-furiosa)
+                # MQAScorer는 query_len >= 1이므로 assert 문을 삭제한다.
+                # assert query_len == 1, (
+                #     "seq_len: {}, context_len: {}, query_len: {}".format(
+                #         seq_len, context_len, query_len))
                 self.num_decode_tokens += query_len
                 self.curr_seq_lens.append(curr_seq_len)
 
@@ -536,10 +557,29 @@ class FlashInferImpl(AttentionImpl):
                     causal=True)
         else:
             assert attn_metadata.decode_metadata is not None
-            assert attn_metadata.decode_metadata.decode_wrapper is not None
-            output = attn_metadata.decode_metadata.decode_wrapper.forward(
-                query,
-                kv_cache,
-                sm_scale=self.scale,
-                logits_soft_cap=attn_metadata.logits_soft_cap)
+            if attn_metadata.decode_metadata.decode_wrapper is not None:
+                # (bong-furiosa)
+                # 일반 decoding을 수행하는 Worker라면,
+                # 아래 조건을 만족하도록 model_runner.py execute_model 함수 수정
+                #   - decode_wrapper is not None
+                #   - specdec_wrapper is None
+                assert attn_metadata.decode_metadata.specdec_wrapper is None
+                output = attn_metadata.decode_metadata.decode_wrapper.forward(
+                    query,
+                    kv_cache,
+                    sm_scale=self.scale,
+                    logits_soft_cap=attn_metadata.logits_soft_cap)
+            else:
+                # (bong-furiosa)
+                # speculative decoding을 수행하는 Worker(e.g. MQAScorer)라면,
+                # 아래 조건을 만족하도록 model_runner.py execute_model 함수 수정
+                #   - decode_wrapper is None
+                #   - specdec_wrapper is not None
+                assert attn_metadata.decode_metadata.specdec_wrapper is not None
+                output = attn_metadata.decode_metadata.specdec_wrapper.forward(
+                    query,
+                    kv_cache,
+                    logits_soft_cap=attn_metadata.logits_soft_cap,
+                    causal=True)
+
         return output.view(num_tokens, hidden_size)

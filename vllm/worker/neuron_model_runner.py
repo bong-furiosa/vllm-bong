@@ -260,3 +260,16 @@ class NeuronModelRunner(ModelRunnerBase[ModelInputForNeuron]):
     @property
     def vocab_size(self) -> int:
         return self.model_config.get_vocab_size()
+
+    # (bong-furiosa)
+    # model_runner.py에서 MQAScorer의 inter_data 값 계산을
+    # 제어하는 enable_mqa 접근 함수
+    def set_enable_mqa(self, enable_mqa: bool):
+        self.enable_mqa = enable_mqa
+
+    def get_enable_mqa(self) -> bool:
+        try:
+            return self.enable_mqa
+        except AttributeError as e:
+            print(f"An error occurred: {e}")
+            exit(-1)
